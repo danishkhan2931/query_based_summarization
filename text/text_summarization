@@ -1,0 +1,354 @@
+//Text Summarisation
+#include<iostream>
+#include<ostream>
+#include<stdlib.h>
+#include<stdio.h>
+#include<fstream>
+#include<iomanip>
+#include <dirent.h>
+#include<map>
+#include<math.h>
+#include<string.h>
+#include<sstream>
+#include<string>
+#include<algorithm>
+#include<stack>
+#include<vector>
+using namespace std;
+
+map<string,int>stopword;
+vector<string>filename[100];
+vector<float>value_cosA;
+
+FILE *x[10],*y;
+fstream fi[100],fo,fq;
+vector<string>files;
+
+
+vector<string> open(string path)  // to open a file in the directory
+{
+    
+    DIR*    dir;
+    dirent* pdir;
+    vector<string> files;
+    
+    dir = opendir(path.c_str());
+    
+    while ((pdir = (readdir(dir))))
+    {
+        files.push_back(pdir->d_name);
+        
+    }
+    
+    return files;
+}
+map<string,int> mapstopwords()      // func to map the stop word list
+{
+    string str;
+    map<string,int>m;
+    ifstream fin("stopwords.txt");
+    while(fin>>str)
+    {
+        m[str]=1;
+        
+    }
+    return m;
+}
+map<string,float> termfrequency(string s)    // func to make term vs file matrix
+{    string str;
+    map<string,float>m;
+    map<string,float>::iterator it;
+    fstream fin(s);
+    while (fin>>str)
+    {
+       if(stopword[str]!=1)
+       {
+           m[str]++;
+       }
+    }
+    for(it=m.begin();it!=m.end();it++)
+        m[it->first]=1+log10f(it->second);
+    
+    return m;
+}
+map<string,float> inverseparafrequency(map<string,int>m,unsigned long n)    // func to make ipf matrix
+{
+    map<string,float>x;
+    float f;
+     map<string,int>::iterator it;
+   for(it=m.begin();it!=m.end();++it)
+   {
+       f=log10f((float)n/it->second);
+       x[it->first]=f;
+   }
+    
+    return x;
+    
+}
+map<string,int> caloverallfreq(vector<map<string,float>>m)    // func to calculate overall freq
+{
+    map<string,int>x;
+    map<string,float>::iterator it;
+
+    
+        for(int j=0;j<m.size();j++)
+        {
+            for(it=m[j].begin();it!=m[j].end();++it)
+          {
+            x[it->first]++;
+          }
+        }
+    
+    return x;
+}
+void break_in_para(string m,int index)    // to break in para and make corrosponding new files
+{
+    
+    string copy,temp,line;
+    int l=0;
+    
+    do{ temp=m;
+        FILE *ftemp;
+        fstream fin;
+        temp.append(to_string(l));
+        temp.append(".txt");
+        ftemp=fopen(temp.c_str(),"w");
+        fin.open(temp);
+        filename[index].push_back(temp);
+        l++;
+       while(getline(fi[index],line))
+       {
+        fputs(line.c_str(),ftemp);
+          if(line.size()<4096)
+              break;
+       }
+        fin.close();
+        fclose(ftemp);
+        
+    }while(fi[index].peek()!= EOF);
+    
+}
+vector<map<string,float>> ipfmultiplytf(vector<map<string,float>>m,map<string,float>f)
+{
+    vector<map<string,float>>temp;
+        map<string,float>::iterator it;
+
+    for(int i=0;i<m.size();i++)
+    {
+        map<string,float>temp1;
+
+        for(it=m[i].begin();it!=m[i].end();++it)
+        {
+            temp1[it->first]=(it->second*f[it->first]);
+        }
+        temp.push_back(temp1);
+    }
+    return temp;
+}
+vector<map<string,float>>normalise(vector<map<string,float>>m)    // to normalise the value of tf*ipf
+
+{
+    vector<map<string,float>>temp;
+    map<string,float>::iterator it;
+    float sum=0,sq;
+    
+    for(int i=0;i<m.size();i++)
+    {
+        map<string,float>temp1;
+        sum=0;
+        for(it=m[i].begin();it!=m[i].end();++it)
+        {
+            sum+=pow(it->second,2);
+        }
+        sq=sqrtf(sum);
+        for(it=m[i].begin();it!=m[i].end();++it)
+        {
+            temp1[it->first]=(it->second/sq);
+        }
+
+        temp.push_back(temp1);
+    }
+
+    
+    return temp;
+}
+map<string,float> normalise_query(map<string,float>m)    // to normalise the query
+
+{
+    map<string,float>temp1;
+    map<string,float>::iterator it;
+    float sum=0,sq;
+    
+        for(it=m.begin();it!=m.end();++it)
+        {
+            sum+=pow(it->second,2);
+        }
+        sq=sqrtf(sum);
+        for(it=m.begin();it!=m.end();++it)
+        {
+            temp1[it->first]=(it->second/sq);
+            
+        }
+        
+           
+return temp1;
+}
+vector<map<string,float>> calculate_cosA(vector<map<string,float>>m,map<string,float>q)
+{
+    vector<map<string,float>>temp;
+    map<string,float>::iterator it;
+    float sum=0;
+    
+    for(int i=0;i<m.size();i++)
+    {
+        map<string,float>temp1;
+        sum=0;
+        for(it=m[i].begin();it!=m[i].end();++it)
+        {
+            temp1[it->first]=it->second*q[it->first];
+            sum+=temp1[it->first];
+            
+        }
+        temp.push_back(temp1);
+        value_cosA.push_back(sum);
+               
+    }
+    
+    
+    return temp;
+}
+void Print_result(unsigned long n)
+{
+    float max=0,f=0,location,total_count=0;
+    unsigned long len=value_cosA.size();
+    string s,line;
+    for(int i=0;i<len;i++)
+    {
+      if(max<value_cosA[i])
+      {
+          max=value_cosA[i];
+          location=i;
+      }
+    }
+    
+    for(int i=0;i<n;i++)     // term frequency of each paragraph file
+    {
+        for(int j=0;j<filename[i].size();j++)
+        {
+            if(total_count==location)
+            {
+                f=1;
+                s=filename[i][j];
+                break;
+            }
+            total_count++;
+        }
+        if(f==1)
+            break;
+        
+    }
+       fstream fin;
+    fin.open(s);
+    while(fin.peek()!= EOF)
+    {
+        getline(fin,line);
+        fputs(line.c_str(),y);
+    }
+
+}
+void remove_unwanted_content()
+{
+    unsigned long no_of_files=files.size();
+    string line;
+  
+    for(int i=0;i<no_of_files;i++)
+    {
+        for(int j=0;j<filename[i].size();j++)
+        {
+            fstream temp;
+            temp.open(filename[i][j].c_str());
+            temp>>line;
+            
+            if(line.compare("<DOC>")==0||line.compare("<P>")==0||line.compare("</P>")==0||line.compare("<TEXT>")==0||line.compare("</TEXT>")==0||line.compare("<BODY>")==0||line.compare("</BODY>")==0||line.compare("</DOC>")==0)
+            {
+                remove(filename[i][j].c_str());
+                filename[i].erase(filename[i].begin()+j);
+                               
+            }
+        }
+        
+    }
+   
+}
+int main()
+{
+     y=fopen("output.txt","w");
+    fo.open("output.txt");
+    fq.open("query.txt");
+    string qword,dirpath("/Users/akashverma/Library/Developer/Xcode/DerivedData/Text_Summarisation-gdwdnlfmgxzjivguqlkznrurrgfq/Build/Products/Debug/input");
+    map<string,int>overallfreq;
+    vector<map<string,float>>ipf_tf,tf,normalised_ipf_tf,cosA;
+    vector<map<string,float>>::iterator imc;
+    map<string,float>ipf,tempmap,querymap;
+    map<string,int>::iterator it;
+    map<string,float>::iterator itf;
+   
+    stopword =mapstopwords();
+    files=open(dirpath);
+    unsigned long no_of_files=files.size();
+   
+    
+    for(int i=0;i<no_of_files;i++)   // breaking each file into sub file ( paragraph wise )
+    {
+        
+        fi[i].open(files[i]);
+       break_in_para(files[i],i);
+       
+    }
+    
+     remove_unwanted_content();
+
+     for(int i=0;i<no_of_files;i++)     // term frequency of each paragraph file
+    {
+        for(int j=0;j<filename[i].size();j++)
+        {   
+            cout<<filename[i][j]<<endl;
+            tempmap=termfrequency(filename[i][j]);
+            tf.push_back(tempmap);
+        }
+        
+    }
+   
+    
+       
+
+    
+   
+      overallfreq=caloverallfreq(tf);   // calculating overall frequency in all files
+    
+      ipf=inverseparafrequency(overallfreq,tf.size());   //calculating ipf of each term
+    
+    
+      ipf_tf=ipfmultiplytf(tf,ipf);   //Making a multiplication of tf with ipf
+            
+                   
+    normalised_ipf_tf=normalise(ipf_tf);   // to normalise the value of tf*ipf
+    
+    
+    ////  QUERY PROCESSING
+   
+        tempmap=termfrequency("query.txt");
+        querymap=normalise_query(tempmap);    // normalising query
+    
+    //  ACCESS Query
+    
+    cosA=calculate_cosA(normalised_ipf_tf,querymap);
+    //Printing validate result
+   
+    Print_result(no_of_files);
+
+    
+    
+    
+    return 0;
+}
